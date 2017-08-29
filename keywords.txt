@@ -1,0 +1,8 @@
+MT_BoardOrientation KEYWORD1	
+Init KEYWORD2
+InitWithVars KEYWORD2
+ReadFiltered KEYWORD2
+ReadDirection KEYWORD2
+ReadAverage KEYWORD2
+ReadOrientation KEYWORD2
+GetOrientation KEYWORD2
