@@ -39,6 +39,12 @@ THE SOFTWARE.
 ===============================================
 */
 
+ /*
+  * MPU6050: 			X=Right/Left, Y=Forward/Backward, Z=Up/Down
+  * orientation (byte):	0=flat, 1=upside-down, 2=up, 3=down, 4=left-side, 5=right-side
+  * direction (byte):	-1=stationary, 0=forward, 1=back, 2=up, 3=down, 4=left, 5=right
+  */
+
 #include "Arduino.h"
 #include "MT_BoardOrientation.h"
 #include <I2Cdev.h>                               //I2C devices

@@ -4,6 +4,12 @@
  * Created by MTS Standish (mattThurstan), 2017.
  * Copyleft.
  */
+ 
+ /*
+  * MPU6050: 			X=Right/Left, Y=Forward/Backward, Z=Up/Down
+  * orientation (byte):	0=flat, 1=upside-down, 2=up, 3=down, 4=left-side, 5=right-side
+  * direction (byte):	-1=stationary, 0=forward, 1=back, 2=up, 3=down, 4=left, 5=right
+  */
 
 #ifndef __MT_BOARDORIENTATION_H__
 #define __MT_BOARDORIENTATION_H__
@@ -24,7 +30,6 @@ class MT_BoardOrientation
 {
   private:
 	/*----------------------------MPU6050 init---------------------------*/
-	//X=Right/Left, Y=Forward/Backward, Z=Up/Down
 	MPU6050 _mpu6050;  								//accel gyro;
 	int16_t _mpu6050AccelOffset[3];       			//XYZ accel offsets to write to the MPU6050 - get from full calibration and save to memory
 	int16_t _mpu6050GyroOffset[3];             		//XYZ gyro offsets to write to the MPU6050 - get from full calibration and save to memory
