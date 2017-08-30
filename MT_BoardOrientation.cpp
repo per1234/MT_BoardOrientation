@@ -52,7 +52,6 @@ THE SOFTWARE.
 #include <Wire.h>
 
 //#define DEBUG	//comment/un-comment
-
 #ifdef DEBUG
   #define DEBUG_PRINT_HEADER(x); Serial.print(F("MT_BoardOrientation - "))
   #define DEBUG_PRINT(x);    Serial.print(x)
@@ -67,27 +66,19 @@ THE SOFTWARE.
   #define DEBUG_PRINTLNF(x)  //blank line
 #endif
 
-/*
-inline unsigned long get_last_time();
-inline unsigned long get_last_time();
-inline float get_last_x_angle();
-inline float get_last_y_angle();
-inline float get_last_z_angle();
-inline float get_last_gyro_x_angle();
-inline float get_last_gyro_y_angle();
-inline float get_last_gyro_z_angle();
-*/
 
 MT_BoardOrientation::MT_BoardOrientation() {
 	
 	/*----------------------------MPU6050 init---------------------------*/
 	//X=Right/Left, Y=Forward/Backward, Z=Up/Down
 	_mpu6050AccelOffset[0] = 436; 				//XYZ accel offsets to write to the MPU6050 - get from full calibration and save to memory
-	_mpu6050AccelOffset[1] = 1956;
-	_mpu6050AccelOffset[2] = 1318;
+	_mpu6050AccelOffset[1] = 1956;				//..these are quick ones i worked out for my board setup..
+	_mpu6050AccelOffset[2] = 1318;				//..
 	_mpu6050GyroOffset[0] = 9;       			//XYZ gyro offsets to write to the MPU6050 - get from full calibration and save to memory
 	_mpu6050GyroOffset[1] = -32; 
 	_mpu6050GyroOffset[2] = 69;
+	
+	/*----------------------------calibration----------------------------*/
 	_mpu6050CalibratePrevMillis = 0;            //previous time for reference
 
 	/*----------------------------stuff for filtering--------------------*/
@@ -333,6 +324,161 @@ void MT_BoardOrientation::ReadOrientation() {
 
 }
 
+void MT_BoardOrientation::QuickCalibration() {
+/* gets average current reading and sets as zero point
+ *  we only need to do the gyro
+ * ..so it ideally needs to have been running for a few seconds
+ * but as this quick save is intended just to compensate for slight 
+ * drift whilst out riding, it will have been running a while anyway.
+ * prob 100 samples
+ * ..could loop a few times and average that aswell.. 
+ * still wouldn't notice the time
+ *
+ * NOTE: this will not save values, this has to be dealt with by parent program.
+ */
+	doMPU6050ReadAverage();
+	for (int i = 0; i < 3; i++) {
+		_mpu6050AccelZero[i] = _mpu6050AccelReadAverage[i];  //used in orientation
+		_mpu6050GyroZero[i] = _mpu6050GyroReadAverage[i];    //used at start of MPU6050 filtering loop
+	}
+}
 
+void MT_BoardOrientation::doMPU6050ReadAverage() {
+/* this does not get used for the main filtered loop, only for calibration porpoises
+ * used by both quick and full calibrations
+ */
+	_mpu6050.getMotion6(&_mpu6050AccelRead[0], &_mpu6050AccelRead[1], &_mpu6050AccelRead[2], &_mpu6050GyroRead[0], &_mpu6050GyroRead[1], &_mpu6050GyroRead[2]);
+	delay(100);  //trying to iron out instability at the beginning
 
+	unsigned long accelSampleX = 0;
+	unsigned long accelSampleY = 0;
+	unsigned long accelSampleZ = 0;
+	unsigned long gyroSampleX = 0;
+	unsigned long gyroSampleY = 0;
+	unsigned long gyroSampleZ = 0;
+
+	//get motion data averages
+	for (int i=0; i < _mpu6050CalibrateSampleTotal; i++) {
+		_mpu6050.getMotion6(&_mpu6050AccelRead[0], &_mpu6050AccelRead[1], &_mpu6050AccelRead[2], &_mpu6050GyroRead[0], &_mpu6050GyroRead[1], &_mpu6050GyroRead[2]);
+
+		accelSampleX += _mpu6050AccelRead[0];
+		accelSampleY += _mpu6050AccelRead[1];
+		accelSampleZ += _mpu6050AccelRead[2];
+		gyroSampleX += _mpu6050GyroRead[0];
+		gyroSampleY += _mpu6050GyroRead[1];
+		gyroSampleZ += _mpu6050GyroRead[2];
+
+		delay(2); //..so we don't get repeated measures ???
+	}
+
+	_mpu6050AccelReadAverage[0] = (accelSampleX / _mpu6050CalibrateSampleTotal);
+	_mpu6050AccelReadAverage[1] = (accelSampleY / _mpu6050CalibrateSampleTotal);
+	_mpu6050AccelReadAverage[2] = (accelSampleZ / _mpu6050CalibrateSampleTotal);
+	_mpu6050GyroReadAverage[0] = (gyroSampleX / _mpu6050CalibrateSampleTotal);
+	_mpu6050GyroReadAverage[1] = (gyroSampleY / _mpu6050CalibrateSampleTotal);
+	_mpu6050GyroReadAverage[2] = (gyroSampleZ / _mpu6050CalibrateSampleTotal);
+}
+
+void MT_BoardOrientation::FullCalibration() {
+	boolean thresholdVers = 1;  //which version of trying to nudge the offsets so everything zeros out do we want to use right now..?
+
+	//sensor_temperature = (_mpu6050.getTemperature() + 12412) / 340; //do later
+  
+	doMPU6050ReadAverage(); //first averaging read
+
+	if (thresholdVers == 1) {
+		//work out initial starting point for offsets
+		_mpu6050AccelOffset[0] = -_mpu6050AccelReadAverage[0] / 8;
+		_mpu6050AccelOffset[1] = -_mpu6050AccelReadAverage[1] / 8;
+		_mpu6050AccelOffset[2] = (16384-_mpu6050AccelReadAverage[2]) / 8;
+		_mpu6050GyroOffset[0] = -_mpu6050GyroReadAverage[0] / 4;
+		_mpu6050GyroOffset[1] = -_mpu6050GyroReadAverage[1] / 4;
+		_mpu6050GyroOffset[2] = -_mpu6050GyroReadAverage[2] / 4;
+	}
+    
+	long mpu6050CalibrateCurMillis = millis();   //get current time
+	int allOk = 0;
+  
+	while (1) {
+      
+		//set offsets
+		_mpu6050.setXAccelOffset(_mpu6050AccelOffset[0]);
+		_mpu6050.setYAccelOffset(_mpu6050AccelOffset[1]);
+		_mpu6050.setZAccelOffset(_mpu6050AccelOffset[2]);
+		_mpu6050.setXGyroOffset(_mpu6050GyroOffset[0]);
+		_mpu6050.setYGyroOffset(_mpu6050GyroOffset[1]);
+		_mpu6050.setZGyroOffset(_mpu6050GyroOffset[2]);
+		
+		doMPU6050ReadAverage(); //do an averaged read
+		  
+		if (thresholdVers == 0) {
+		  
+			//nudge read towards motion data using offsets
+			for (int i = 0; i < 3; i++) {
+			if (_mpu6050AccelReadAverage[i] > 0) _mpu6050AccelOffset[i]--;
+			else if (_mpu6050AccelReadAverage[i] < 0) _mpu6050AccelOffset[i]++;
+
+			if (_mpu6050GyroReadAverage[i] > 0) _mpu6050GyroOffset[i]--;
+			else if (_mpu6050GyroReadAverage[i] < 0) _mpu6050GyroOffset[i]++;
+			}
+		
+			//are we all within thresholds?
+			for (int i = 0; i < 3; i++) {
+				if (_mpu6050AccelReadAverage[i] <= _mpu6050CalibrateAccelThreshold && _mpu6050AccelReadAverage[i] >= -_mpu6050CalibrateAccelThreshold) { allOk++; }
+				if (_mpu6050GyroReadAverage[i] <= _mpu6050CalibrateGyroThreshold && _mpu6050GyroReadAverage[i] >= -_mpu6050CalibrateGyroThreshold) { allOk++; }
+			}
+		  
+		} else if (thresholdVers == 1) {
+
+			////are we all within thresholds? ..alt vers
+			if (abs(_mpu6050AccelReadAverage[0]) <= _mpu6050CalibrateAccelThreshold) allOk++;
+			else _mpu6050AccelOffset[0] = _mpu6050AccelOffset[0] - _mpu6050AccelReadAverage[0] / _mpu6050CalibrateAccelThreshold;
+
+			if (abs(_mpu6050AccelReadAverage[1]) <= _mpu6050CalibrateAccelThreshold) allOk++;
+			else _mpu6050AccelOffset[1] = _mpu6050AccelOffset[1] - _mpu6050AccelReadAverage[1]/_mpu6050CalibrateAccelThreshold;
+
+			if (abs(16384 - _mpu6050AccelReadAverage[2]) <= _mpu6050CalibrateAccelThreshold) allOk++;
+			else _mpu6050AccelOffset[2] = _mpu6050AccelOffset[2] + (16384 - _mpu6050AccelReadAverage[2]) / _mpu6050CalibrateAccelThreshold;
+
+			if (abs(_mpu6050GyroReadAverage[0])<=_mpu6050CalibrateGyroThreshold) allOk++;
+			else _mpu6050GyroOffset[0] = _mpu6050GyroOffset[0] - _mpu6050GyroReadAverage[0] / (_mpu6050CalibrateGyroThreshold + 1);
+
+			if (abs(_mpu6050GyroReadAverage[1]) <= _mpu6050CalibrateGyroThreshold) allOk++;
+			else _mpu6050GyroOffset[1] = _mpu6050GyroOffset[1] - _mpu6050GyroReadAverage[1] / (_mpu6050CalibrateGyroThreshold + 1);
+
+			if (abs(_mpu6050GyroReadAverage[2])<=_mpu6050CalibrateGyroThreshold) allOk++;
+			else _mpu6050GyroOffset[2] = _mpu6050GyroOffset[2] - _mpu6050GyroReadAverage[2] / (_mpu6050CalibrateGyroThreshold + 1);
+
+		} //END thresholdVers
+
+		//all ok?
+		if (allOk == 6) {
+		  //_doFullCalibration = false;
+		  break;  //break out of the while 1 loop
+		}
+
+		//timeout
+		if((long) (mpu6050CalibrateCurMillis - _mpu6050CalibratePrevMillis) >= _mpu6050CalibrateTimeout) {
+		  //save what we have and get out
+		  //_doFullCalibration = false;
+		  break;  //break out of the while 1 loop
+		}
+	  
+		_mpu6050CalibratePrevMillis = millis();               //store the current time
+	} //END while loop
+
+	//..will need '_mpu6050AccelOffset[]' and '_mpu6050GyroOffset[]'
+}
+
+void MT_BoardOrientation::SetMPU6050AccelOffset(int16_t ao[3]) {
+	for (int i = 0; i < 3; i++) {
+		_mpu6050AccelOffset[i] = ao[i];
+	}
+}
+
+void MT_BoardOrientation::SetMPU6050GyroOffset(int16_t go[3]) {
+	for (int i = 0; i < 3; i++) {
+		_mpu6050GyroOffset[i] = go[i];
+	}
+}
 

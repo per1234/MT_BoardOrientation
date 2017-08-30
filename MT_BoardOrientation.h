@@ -33,13 +33,15 @@ class MT_BoardOrientation
 	MPU6050 _mpu6050;  								//accel gyro;
 	int16_t _mpu6050AccelOffset[3];       			//XYZ accel offsets to write to the MPU6050 - get from full calibration and save to memory
 	int16_t _mpu6050GyroOffset[3];             		//XYZ gyro offsets to write to the MPU6050 - get from full calibration and save to memory
+	
+	/*----------------------------calibration----------------------------*/
 	const int _mpu6050CalibrateSampleTotal = 100;	//how many samples to take at once when calibrating
 	const int _mpu6050CalibrateAccelThreshold = 10;	//threshold tolerance for 'dead zone' at center of readings
 	const int _mpu6050CalibrateGyroThreshold = 3; 	//..for gyro
 	long _mpu6050CalibratePrevMillis;         		//previous time for reference
 	const long _mpu6050CalibrateInterval = 1000;	//sampling interval in milliseconds
-	const long _mpu6050CalibrateTimeout = 30000;	//sampling interval in milliseconds
-
+	const long _mpu6050CalibrateTimeout = 300000;	//sampling interval in milliseconds (5 mins)
+	
 	/*----------------------------stuff for filtering--------------------*/
 	//const unsigned long _mpu6050ReadInterval = 20;	//read loop interval in milliseconds   //40 //1000
 	unsigned long _mpu6050ReadPrevMillis;     		//previous time for reference
@@ -87,6 +89,8 @@ class MT_BoardOrientation
 	inline float get_last_gyro_y_angle() {return _mpu6050GyroPrev[1];}
 	inline float get_last_gyro_z_angle() {return _mpu6050GyroPrev[2];}
 	void set_last_read_angle_data(unsigned long time, float accel_y, float x, float y, float z, float x_gyro, float y_gyro, float z_gyro);
+	
+	void doMPU6050ReadAverage();
 
   public:
 	MT_BoardOrientation();
@@ -100,7 +104,20 @@ class MT_BoardOrientation
 	byte GetDirection() { return _directionCur; }
 	byte GetOrientation() { return _orientation; }
 	
-
+	void QuickCalibration();
+	void FullCalibration();
+	
+	int16_t GetMPU6050AccelOffsetX() { return _mpu6050AccelOffset[0]; }
+	int16_t GetMPU6050AccelOffsetY() { return _mpu6050AccelOffset[1]; }
+	int16_t GetMPU6050AccelOffsetZ() { return _mpu6050AccelOffset[2]; }
+	
+	int16_t GetMPU6050GyroOffsetX() { return _mpu6050GyroOffset[0]; }
+	int16_t GetMPU6050GyroOffsetY() { return _mpu6050GyroOffset[1]; }
+	int16_t GetMPU6050GyroOffsetZ() { return _mpu6050GyroOffset[2]; }
+	
+	void SetMPU6050AccelOffset(int16_t ao[3]);
+	void SetMPU6050GyroOffset(int16_t go[3]);
+	
 };
 
 #endif
